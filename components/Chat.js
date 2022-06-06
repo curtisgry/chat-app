@@ -57,6 +57,7 @@ export default function Chat({ route, navigation }) {
                         data.createdAt = data.createdAt.toDate();
                         messageList.push(data);
                 });
+                // sort messages so the newest time is at the bottom of the rendered bubbles
                 messageList.sort((a, b) => b.createdAt - a.createdAt);
                 setMessages(messageList);
         };
