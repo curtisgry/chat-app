@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { View, KeyboardAvoidingView, Platform } from 'react-native';
-import { GiftedChat, Bubble } from 'react-native-gifted-chat';
+import { GiftedChat, Bubble, InputToolbar } from 'react-native-gifted-chat';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 
 import firebase from 'firebase';
 import 'firebase/firestore';
@@ -32,24 +34,23 @@ const db = app.firestore();
 export default function Chat({ route, navigation }) {
         // Messages state for GiftedChat, each element of array is a message
         const [messages, setMessages] = useState([]);
+        // uid from firebase auth
         const [uid, setUid] = useState('');
+        // save connected status in state
+        const [isConnected, setIsConnected] = useState(undefined);
 
         // Color and name passed from Start.js
         const { color, name } = route.params;
 
+        // messages from firebase firestore
         const referenceMessages = db.collection('messages');
 
-        const authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
-                if (!user) {
-                        await firebase.auth().signInAnonymously();
-                }
-                setUid(user.uid);
-        });
-
+        // Add message to firebase
         const addMessage = (message) => {
                 referenceMessages.add(message);
         };
 
+        // update messages in state when firestore gets new data
         const onCollectionUpdate = (querySnapshot) => {
                 const messageList = [];
                 querySnapshot.forEach((doc) => {
@@ -59,16 +60,87 @@ export default function Chat({ route, navigation }) {
                 });
                 // sort messages so the newest time is at the bottom of the rendered bubbles
                 messageList.sort((a, b) => b.createdAt - a.createdAt);
+                // set the state
                 setMessages(messageList);
+        };
+
+        // gets the messages saved in async storage
+        const getMessages = async () => {
+                let newMessages;
+                try {
+                        newMessages = (await AsyncStorage.getItem('messages')) || [];
+                        console.log('newmessages', newMessages);
+                        if (newMessages !== null) {
+                                setMessages([...JSON.parse(newMessages)]);
+                        }
+                } catch (error) {
+                        console.log(error.message);
+                }
+        };
+
+        // save messages to async storage
+        const saveMessages = async () => {
+                if (!messages) return;
+                try {
+                        await AsyncStorage.setItem('messages', JSON.stringify(messages));
+                } catch (error) {
+                        console.log(error.message);
+                }
+        };
+
+        // clears messages in asyncstorage for testing
+        const clearMessages = async () => {
+                try {
+                        await AsyncStorage.removeItem('messages');
+                } catch (error) {
+                        console.log(error.message);
+                }
+        };
+
+        // Change input toolbar depending on user connection status
+        // use with GiftedChat as prop with the same name
+        const renderInputToolbar = (props) => {
+                if (isConnected == false) {
+                        // null
+                } else {
+                        return <InputToolbar {...props} />;
+                }
         };
 
         // Set the initial messages when the chat screen is loaded
         useEffect(() => {
-                const unsubscribeMessages = referenceMessages.onSnapshot(onCollectionUpdate);
+                let unsubscribeMessages;
+                let authUnsubscribe;
+                NetInfo.fetch().then((connection) => {
+                        if (connection.isConnected) {
+                                console.log('online');
+                                setIsConnected(true);
+                                // onSnapshot returns an unsubscribe function to stop listening for updates
+                                unsubscribeMessages = referenceMessages.onSnapshot(onCollectionUpdate);
+                                // onAuthStateChanged does the same as above but for auth
+                                authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
+                                        if (!user) {
+                                                await firebase.auth().signInAnonymously();
+                                        }
+                                        setUid(user.uid);
+                                });
+
+                                // clear old saved messages for testing
+                                clearMessages();
+                                // save messages from firebase to storage
+                                saveMessages();
+                        } else {
+                                console.log('offline');
+                                setIsConnected(false);
+                                getMessages();
+                        }
+                });
 
                 return function cleanUp() {
-                        unsubscribeMessages();
-                        authUnsubscribe();
+                        if (isConnected) {
+                                unsubscribeMessages();
+                                authUnsubscribe();
+                        }
                 };
         }, []);
 
@@ -76,8 +148,13 @@ export default function Chat({ route, navigation }) {
         const onSend = useCallback((messages = []) => {
                 setMessages((previousMessages) => {
                         GiftedChat.append(previousMessages, messages);
-                }, []);
+                });
         });
+
+        // when messages state is changed saveMessages will save to asyncStorage
+        useEffect(() => {
+                saveMessages();
+        }, [messages]);
 
         // Change the color of the chat bubble
         const renderBubble = useCallback((props) => (
@@ -91,12 +168,11 @@ export default function Chat({ route, navigation }) {
                 />
         ));
 
-        console.log(messages);
-
         return (
                 <View style={{ flex: 1, backgroundColor: color }}>
                         <GiftedChat
                                 renderBubble={renderBubble}
+                                renderInputToolbar={(props) => renderInputToolbar(props)}
                                 messages={messages}
                                 onSend={(messages) => {
                                         addMessage(messages[0]);
