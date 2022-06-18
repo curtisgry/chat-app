@@ -64,18 +64,9 @@ export default function Chat({ route, navigation }) {
                 setMessages(messageList);
         };
 
-        // gets the messages saved in async storage
-        const getMessages = async () => {
-                let newMessages;
-                try {
-                        newMessages = (await AsyncStorage.getItem('messages')) || [];
-                        console.log('newmessages', newMessages);
-                        if (newMessages !== null) {
-                                setMessages([...JSON.parse(newMessages)]);
-                        }
-                } catch (error) {
-                        console.log(error.message);
-                }
+        const asyncStorageTest = async (locationText) => {
+                const testasync = (await AsyncStorage.getItem('messages')) || [];
+                console.log(locationText, testasync);
         };
 
         // save messages to async storage
@@ -83,6 +74,20 @@ export default function Chat({ route, navigation }) {
                 if (!messages) return;
                 try {
                         await AsyncStorage.setItem('messages', JSON.stringify(messages));
+                } catch (error) {
+                        console.log(error.message);
+                }
+        };
+
+        // gets the messages saved in async storage
+        const getMessages = async () => {
+                let newMessages;
+                try {
+                        newMessages = (await AsyncStorage.getItem('messages')) || [];
+                        console.log('newmessages', newMessages);
+                        if (newMessages !== null) {
+                                setMessages(JSON.parse(newMessages));
+                        }
                 } catch (error) {
                         console.log(error.message);
                 }
@@ -111,50 +116,62 @@ export default function Chat({ route, navigation }) {
         useEffect(() => {
                 let unsubscribeMessages;
                 let authUnsubscribe;
+
+                // Check connection status and set state for isConnected
                 NetInfo.fetch().then((connection) => {
                         if (connection.isConnected) {
-                                console.log('online');
                                 setIsConnected(true);
-                                // onSnapshot returns an unsubscribe function to stop listening for updates
-                                unsubscribeMessages = referenceMessages.onSnapshot(onCollectionUpdate);
-                                // onAuthStateChanged does the same as above but for auth
-                                authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
-                                        if (!user) {
-                                                await firebase.auth().signInAnonymously();
-                                        }
-                                        setUid(user.uid);
-                                });
-
-                                // clear old saved messages for testing
-                                clearMessages();
-                                // save messages from firebase to storage
-                                saveMessages();
                         } else {
-                                console.log('offline');
                                 setIsConnected(false);
-                                getMessages();
                         }
                 });
 
-                return function cleanUp() {
-                        if (isConnected) {
+                if (isConnected) {
+                        console.log('online');
+                        setIsConnected(true);
+                        // onSnapshot returns an unsubscribe function to stop listening for updates
+                        unsubscribeMessages = referenceMessages.onSnapshot(onCollectionUpdate);
+                        // onAuthStateChanged does the same as above but for auth
+                        authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
+                                if (!user) {
+                                        await firebase.auth().signInAnonymously();
+                                }
+                                setUid(user.uid);
+                        });
+
+                        // clear old saved messages for testing
+                        // clearMessages();
+
+                        // save messages from firebase to storage
+                        saveMessages().catch(console.error);
+
+                        return function cleanUp() {
                                 unsubscribeMessages();
                                 authUnsubscribe();
-                        }
-                };
-        }, []);
+                        };
+                }
+
+                console.log('offline');
+
+                getMessages();
+        }, [isConnected]);
 
         // Append message to GiftedChat that appear on screen
         const onSend = useCallback((messages = []) => {
                 setMessages((previousMessages) => {
                         GiftedChat.append(previousMessages, messages);
                 });
+                addMessage(messages[0]);
+
+                asyncStorageTest('in on send:');
         });
 
         // when messages state is changed saveMessages will save to asyncStorage
         useEffect(() => {
                 saveMessages();
         }, [messages]);
+
+        console.log(messages);
 
         // Change the color of the chat bubble
         const renderBubble = useCallback((props) => (
@@ -174,10 +191,7 @@ export default function Chat({ route, navigation }) {
                                 renderBubble={renderBubble}
                                 renderInputToolbar={(props) => renderInputToolbar(props)}
                                 messages={messages}
-                                onSend={(messages) => {
-                                        addMessage(messages[0]);
-                                        onSend(messages);
-                                }}
+                                onSend={(messages) => onSend(messages)}
                                 user={{ _id: uid, name }}
                         />
                         {/* Stops keyboard from overlaying the text input when on android */}
