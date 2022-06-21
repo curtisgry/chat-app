@@ -71,7 +71,7 @@ export default function Chat({ route, navigation }) {
 
         // save messages to async storage
         const saveMessages = async () => {
-                if (!messages) return;
+                if (messages.length < 1) return;
                 try {
                         await AsyncStorage.setItem('messages', JSON.stringify(messages));
                 } catch (error) {
@@ -132,9 +132,9 @@ export default function Chat({ route, navigation }) {
                         // onSnapshot returns an unsubscribe function to stop listening for updates
                         unsubscribeMessages = referenceMessages.onSnapshot(onCollectionUpdate);
                         // onAuthStateChanged does the same as above but for auth
-                        authUnsubscribe = firebase.auth().onAuthStateChanged(async (user) => {
+                        authUnsubscribe = firebase.auth().onAuthStateChanged((user) => {
                                 if (!user) {
-                                        await firebase.auth().signInAnonymously();
+                                        firebase.auth().signInAnonymously();
                                 }
                                 setUid(user.uid);
                         });
@@ -152,7 +152,7 @@ export default function Chat({ route, navigation }) {
                 }
 
                 console.log('offline');
-
+                setUid('offlineUser');
                 getMessages();
         }, [isConnected]);
 
@@ -162,13 +162,14 @@ export default function Chat({ route, navigation }) {
                         GiftedChat.append(previousMessages, messages);
                 });
                 addMessage(messages[0]);
-
+                saveMessages();
                 asyncStorageTest('in on send:');
         });
 
         // when messages state is changed saveMessages will save to asyncStorage
         useEffect(() => {
                 saveMessages();
+                asyncStorageTest('after save:');
         }, [messages]);
 
         console.log(messages);
