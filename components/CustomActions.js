@@ -3,11 +3,6 @@ import PropTypes from 'prop-types';
 import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 
 export default class CustomActions extends React.Component {
-        constructor() {
-                super();
-                this.onActionPress = this.onActionPress.bind(this);
-        }
-
         onActionPress = () => {
                 const options = ['Choose From Library', 'Take Picture', 'Send Location', 'Cancel'];
                 const cancelButtonIndex = options.length - 1;
