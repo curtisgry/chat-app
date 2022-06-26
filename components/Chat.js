@@ -1,10 +1,18 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, KeyboardAvoidingView, Platform, Button, Image } from 'react-native';
 import { GiftedChat, Bubble, InputToolbar } from 'react-native-gifted-chat';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
+import * as Permissions from 'expo-permissions';
+import * as ImagePicker from 'expo-image-picker';
+
+import * as Location from 'expo-location';
+import MapView from 'react-native-maps';
+
 import firebase from 'firebase';
+import CustomActions from './CustomActions';
+
 import 'firebase/firestore';
 import 'firebase/auth';
 
@@ -34,6 +42,10 @@ const db = app.firestore();
 export default function Chat({ route, navigation }) {
         // Messages state for GiftedChat, each element of array is a message
         const [messages, setMessages] = useState([]);
+        // Image state
+        const [image, setImage] = useState(null);
+        // Location state
+        const [location, setLocation] = useState(null);
         // uid from firebase auth
         const [uid, setUid] = useState('');
         // save connected status in state
@@ -62,11 +74,6 @@ export default function Chat({ route, navigation }) {
                 messageList.sort((a, b) => b.createdAt - a.createdAt);
                 // set the state
                 setMessages(messageList);
-        };
-
-        const asyncStorageTest = async (locationText) => {
-                const testasync = (await AsyncStorage.getItem('messages')) || [];
-                console.log(locationText, testasync);
         };
 
         // save messages to async storage
@@ -163,16 +170,12 @@ export default function Chat({ route, navigation }) {
                 });
                 addMessage(messages[0]);
                 saveMessages();
-                asyncStorageTest('in on send:');
         });
 
         // when messages state is changed saveMessages will save to asyncStorage
         useEffect(() => {
                 saveMessages();
-                asyncStorageTest('after save:');
         }, [messages]);
-
-        console.log(messages);
 
         // Change the color of the chat bubble
         const renderBubble = useCallback((props) => (
@@ -186,11 +189,77 @@ export default function Chat({ route, navigation }) {
                 />
         ));
 
+        /* Image Funcions */
+        const pickImage = async () => {
+                const { status } = await Permissions.askAsync(Permissions.MEDIA_LIBRARY);
+
+                if (status === 'granted') {
+                        const result = await ImagePicker.launchImageLibraryAsync({
+                                mediaTypes: 'Images',
+                        }).catch((error) => console.log(error));
+
+                        if (!result.cancelled) {
+                                setImage(result);
+                        }
+                }
+        };
+
+        const takePhoto = async () => {
+                const { status } = await Permissions.askAsync(Permissions.CAMERA);
+                if (status === 'granted') {
+                        const result = await ImagePicker.launchCameraAsync({
+                                mediaTypes: 'Images',
+                        }).catch((error) => console.log(error));
+
+                        if (!result.cancelled) {
+                                setImage(result);
+                        }
+                }
+        };
+
+        /* Location Functions */
+
+        const getLocation = async () => {
+                const { status } = await Permissions.askAsync(Permissions.LOCATION_FOREGROUND);
+
+                if (status === 'granted') {
+                        const result = await Location.getCurrentPositionAsync({});
+
+                        if (result) {
+                                setLocation(result);
+                        }
+                }
+        };
+
+        // custom render actions
+        /* eslint-disable-next-line */
+        const renderCustomActions = (props) => { 
+                return <CustomActions {...props} />;
+        };
+
         return (
                 <View style={{ flex: 1, backgroundColor: color }}>
+                        <View style={{ flex: 1, justifyContent: 'center' }}>
+                                <Button title="Pick an image from the library" onPress={pickImage} />
+                                {image && <Image source={{ uri: image.uri }} style={{ width: 200, height: 200 }} />}
+                                <Button title="Take a photo" onPress={takePhoto} />
+                                <Button title="Get my location" onPress={getLocation} />
+                                {location && (
+                                        <MapView
+                                                style={{ width: 300, height: 200 }}
+                                                region={{
+                                                        latitude: location.coords.latitude,
+                                                        longitude: location.coords.longitude,
+                                                        latitudeDelta: 0.0922,
+                                                        longitudeDelta: 0.0421,
+                                                }}
+                                        />
+                                )}
+                        </View>
                         <GiftedChat
                                 renderBubble={renderBubble}
                                 renderInputToolbar={(props) => renderInputToolbar(props)}
+                                renderActions={renderCustomActions}
                                 messages={messages}
                                 onSend={(messages) => onSend(messages)}
                                 user={{ _id: uid, name }}
