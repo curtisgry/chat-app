@@ -4,40 +4,13 @@ import { GiftedChat, Bubble, InputToolbar } from 'react-native-gifted-chat';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
-import * as Permissions from 'expo-permissions';
-import * as ImagePicker from 'expo-image-picker';
-
-import * as Location from 'expo-location';
 import MapView from 'react-native-maps';
 
-import firebase from 'firebase';
+import { collection, onSnapshot, orderBy, query, doc, setDoc, addDoc, snapshotEqual } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import CustomActions from './CustomActions';
 
-import 'firebase/firestore';
-import 'firebase/auth';
-
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-const firebaseConfig = {
-        apiKey: 'AIzaSyD44_qWMrt0omObtYJ_6H15WS7g3qZ23XY',
-        authDomain: 'chat-app-c477c.firebaseapp.com',
-        projectId: 'chat-app-c477c',
-        storageBucket: 'chat-app-c477c.appspot.com',
-        messagingSenderId: '338248643729',
-        appId: '1:338248643729:web:5f7197c017675d04acfb30',
-};
-
-// Initialize Firebase
-let app;
-
-if (firebase.apps.length === 0) {
-        app = firebase.initializeApp(firebaseConfig);
-} else {
-        app = firebase.app();
-}
-const db = app.firestore();
+import { db } from '../firebase/firebase';
 
 export default function Chat({ route, navigation }) {
         // Messages state for GiftedChat, each element of array is a message
@@ -55,18 +28,28 @@ export default function Chat({ route, navigation }) {
         const { color, name } = route.params;
 
         // messages from firebase firestore
-        const referenceMessages = db.collection('messages');
+        const referenceMessages = collection(db, 'messages');
+
+        // Auth from firebbase
+        const auth = getAuth();
 
         // Add message to firebase
         const addMessage = (message) => {
-                referenceMessages.add(message);
+                addDoc(referenceMessages, {
+                        _id: message._id,
+                        text: message.text || '',
+                        createdAt: message.createdAt,
+                        user: message.user,
+                        image: message.image || null,
+                        location: message.location || null,
+                });
         };
 
         // update messages in state when firestore gets new data
         const onCollectionUpdate = (querySnapshot) => {
                 const messageList = [];
-                querySnapshot.forEach((doc) => {
-                        const data = doc.data();
+                querySnapshot.docs.forEach((item) => {
+                        const data = item.data();
                         data.createdAt = data.createdAt.toDate();
                         messageList.push(data);
                 });
@@ -136,12 +119,13 @@ export default function Chat({ route, navigation }) {
                 if (isConnected) {
                         console.log('online');
                         setIsConnected(true);
+                        const dbQuery = query(referenceMessages, orderBy('createdAt', 'desc'));
                         // onSnapshot returns an unsubscribe function to stop listening for updates
-                        unsubscribeMessages = referenceMessages.onSnapshot(onCollectionUpdate);
+                        unsubscribeMessages = onSnapshot(dbQuery, onCollectionUpdate);
                         // onAuthStateChanged does the same as above but for auth
-                        authUnsubscribe = firebase.auth().onAuthStateChanged((user) => {
+                        authUnsubscribe = onAuthStateChanged(auth, (user) => {
                                 if (!user) {
-                                        firebase.auth().signInAnonymously();
+                                        auth().signInAnonymously();
                                 }
                                 setUid(user.uid);
                         });
@@ -234,30 +218,33 @@ export default function Chat({ route, navigation }) {
         // custom render actions
         /* eslint-disable-next-line */
         const renderCustomActions = (props) => { 
+                
                 return <CustomActions {...props} />;
+        };
+
+        const renderCustomView = (props) => {
+                const { currentMessage } = props;
+                if (currentMessage.location) {
+                        return (
+                                <MapView
+                                        style={{ width: 150, height: 100, borderRadius: 13, margin: 3 }}
+                                        region={{
+                                                latitude: currentMessage.location.latitude,
+                                                longitude: currentMessage.location.longitude,
+                                                latitudeDelta: 0.0922,
+                                                longitudeDelta: 0.0421,
+                                        }}
+                                />
+                        );
+                }
+                return null;
         };
 
         return (
                 <View style={{ flex: 1, backgroundColor: color }}>
-                        <View style={{ flex: 1, justifyContent: 'center' }}>
-                                <Button title="Pick an image from the library" onPress={pickImage} />
-                                {image && <Image source={{ uri: image.uri }} style={{ width: 200, height: 200 }} />}
-                                <Button title="Take a photo" onPress={takePhoto} />
-                                <Button title="Get my location" onPress={getLocation} />
-                                {location && (
-                                        <MapView
-                                                style={{ width: 300, height: 200 }}
-                                                region={{
-                                                        latitude: location.coords.latitude,
-                                                        longitude: location.coords.longitude,
-                                                        latitudeDelta: 0.0922,
-                                                        longitudeDelta: 0.0421,
-                                                }}
-                                        />
-                                )}
-                        </View>
                         <GiftedChat
                                 renderBubble={renderBubble}
+                                renderCustomView={renderCustomView}
                                 renderInputToolbar={(props) => renderInputToolbar(props)}
                                 renderActions={renderCustomActions}
                                 messages={messages}
